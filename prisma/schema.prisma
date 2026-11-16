@@ -1,0 +1,1105 @@
+// TWOK STUDIO – data model
+// PostgreSQL + Prisma. Safe additive migrations only in production.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Locale {
+  FR
+  EN
+}
+
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  SCHEDULED
+  ARCHIVED
+}
+
+enum ServiceType {
+  PHOTO
+  VIDEO
+  DRONE
+}
+
+enum GalleryLayout {
+  GRID
+  MASONRY
+  SLIDER
+  FULLWIDTH
+  EDITORIAL
+}
+
+enum MediaKind {
+  IMAGE
+  VIDEO
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  RESCHEDULED
+  COMPLETED
+  CANCELLED
+  REJECTED
+}
+
+enum MessageStatus {
+  NEW
+  IN_PROGRESS
+  RESOLVED
+  ARCHIVED
+}
+
+enum NotificationChannel {
+  EMAIL
+  WHATSAPP
+  DASHBOARD
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum MenuTarget {
+  HOME
+  PHOTO
+  VIDEO
+  DRONE
+  BLOG
+  CONTACT
+  BOOKING
+  PROJECTS
+  CLIENTS
+  CUSTOM
+}
+
+enum PageTemplate {
+  DEFAULT
+  FULL_WIDTH
+  LANDING
+  SIDEBAR
+}
+
+enum BlockType {
+  HEADING
+  RICH_TEXT
+  IMAGE
+  VIDEO
+  IMAGE_GALLERY
+  VIDEO_GALLERY
+  MIXED_GALLERY
+  TWO_COLUMNS
+  FULL_WIDTH_IMAGE
+  FULL_WIDTH_VIDEO
+  PROJECT_CARDS
+  CATEGORY_CARDS
+  CLIENT_LOGOS
+  BLOG_ARTICLES
+  TESTIMONIALS
+  CTA
+  CONTACT_FORM
+  BOOKING_FORM
+  MAP
+  SOCIAL_LINKS
+  SPACER
+}
+
+enum HomepageSectionType {
+  HERO
+  INTRO
+  FEATURED_PHOTOS
+  FEATURED_VIDEO
+  SERVICES
+  FEATURED_PROJECTS
+  BEHIND_THE_SCENES
+  CLIENTS
+  BLOG_HIGHLIGHTS
+  CTA
+}
+
+enum WhatsAppPosition {
+  LEFT
+  RIGHT
+}
+
+// ---------------------------------------------------------------------------
+// Authentication & authorization
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  email        String     @unique
+  name         String
+  passwordHash String
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  roles       UserRole[]
+  sessions    Session[]
+  resetTokens PasswordResetToken[]
+  auditLogs   AuditLog[]
+  articles    Article[]
+  media       Media[]
+  bookings    BookingStatusHistory[]
+
+  @@index([status])
+  @@map("users")
+}
+
+model Role {
+  id          String           @id @default(uuid()) @db.Uuid
+  key         String           @unique
+  name        String
+  description String?
+  isSystem    Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id    String           @id @default(uuid()) @db.Uuid
+  key   String           @unique
+  label String
+  group String
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId String @db.Uuid
+  roleId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model Session {
+  id         String   @id @default(uuid()) @db.Uuid
+  tokenHash  String   @unique
+  userId     String   @db.Uuid
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ip         String?
+  userAgent  String?
+  expiresAt  DateTime
+  lastUsedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  tokenHash String    @unique
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model LoginAttempt {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String
+  ip        String
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+  @@map("login_attempts")
+}
+
+// ---------------------------------------------------------------------------
+// Media
+// ---------------------------------------------------------------------------
+
+model Media {
+  id              String    @id @default(uuid()) @db.Uuid
+  kind            MediaKind
+  storageKey      String    @unique
+  url             String
+  thumbnailUrl    String?
+  posterUrl       String?
+  mimeType        String
+  originalName    String
+  sizeBytes       Int
+  width           Int?
+  height          Int?
+  durationSeconds Int?
+  altFr           String?
+  altEn           String?
+  captionFr       String?
+  captionEn       String?
+  folder          String?
+  uploadedById    String?   @db.Uuid
+  uploadedBy      User?     @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  collections       MediaCollectionItem[]
+  references        MediaReference[]
+  projectMedia      ProjectMedia[]
+  categoryCovers    Category[]            @relation("CategoryCover")
+  projectCovers     Project[]             @relation("ProjectCover")
+  articleCovers     Article[]             @relation("ArticleCover")
+  clientLogos       Client[]              @relation("ClientLogo")
+  pageCovers        Page[]                @relation("PageCover")
+  pageSeoImages     PageTranslation[]     @relation("PageSeoImage")
+  projectSeoImages  ProjectTranslation[]  @relation("ProjectSeoImage")
+  articleSeoImages  ArticleTranslation[]  @relation("ArticleSeoImage")
+  siteLogos         SiteSetting[]         @relation("SiteLogo")
+  siteLogosLight    SiteSetting[]         @relation("SiteLogoLight")
+  siteFavicons      SiteSetting[]         @relation("SiteFavicon")
+  seoOgImages       SeoSetting[]          @relation("SeoOgImage")
+  homepageOgImages  HomepageSetting[]     @relation("HomepageOgImage")
+  testimonialPhotos Testimonial[]         @relation("TestimonialPhoto")
+  collectionCovers  MediaCollection[]     @relation("CollectionCover")
+
+  @@index([kind])
+  @@index([createdAt])
+  @@map("media")
+}
+
+model MediaCollection {
+  id           String                @id @default(uuid()) @db.Uuid
+  name         String
+  slug         String                @unique
+  description  String?
+  coverMediaId String?               @db.Uuid
+  coverMedia   Media?                @relation("CollectionCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  items        MediaCollectionItem[]
+
+  @@map("media_collections")
+}
+
+model MediaCollectionItem {
+  collectionId String          @db.Uuid
+  mediaId      String          @db.Uuid
+  sortOrder    Int             @default(0)
+  collection   MediaCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  media        Media           @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, mediaId])
+  @@index([collectionId, sortOrder])
+  @@map("media_collection_items")
+}
+
+model MediaReference {
+  id         String   @id @default(uuid()) @db.Uuid
+  mediaId    String   @db.Uuid
+  media      Media    @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  entityType String
+  entityId   String
+  createdAt  DateTime @default(now())
+
+  @@unique([mediaId, entityType, entityId])
+  @@index([entityType, entityId])
+  @@map("media_references")
+}
+
+// ---------------------------------------------------------------------------
+// Categories (unlimited hierarchy)
+// ---------------------------------------------------------------------------
+
+model Category {
+  id            String        @id @default(uuid()) @db.Uuid
+  service       ServiceType
+  parentId      String?       @db.Uuid
+  parent        Category?     @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children      Category[]    @relation("CategoryTree")
+  status        ContentStatus @default(DRAFT)
+  sortOrder     Int           @default(0)
+  featured      Boolean       @default(false)
+  coverMediaId  String?       @db.Uuid
+  coverMedia    Media?        @relation("CategoryCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
+  galleryLayout GalleryLayout @default(GRID)
+  publishedAt   DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
+
+  translations CategoryTranslation[]
+  projects     ProjectCategory[]
+
+  @@index([service, status, parentId, sortOrder])
+  @@index([parentId])
+  @@map("categories")
+}
+
+model CategoryTranslation {
+  id             String   @id @default(uuid()) @db.Uuid
+  categoryId     String   @db.Uuid
+  category       Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  locale         Locale
+  name           String
+  slug           String
+  description    String?
+  seoTitle       String?
+  seoDescription String?
+
+  @@unique([categoryId, locale])
+  @@unique([locale, slug])
+  @@index([locale])
+  @@map("category_translations")
+}
+
+// ---------------------------------------------------------------------------
+// Pages & page builder
+// ---------------------------------------------------------------------------
+
+model Page {
+  id           String        @id @default(uuid()) @db.Uuid
+  parentId     String?       @db.Uuid
+  parent       Page?         @relation("PageTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children     Page[]        @relation("PageTree")
+  status       ContentStatus @default(DRAFT)
+  template     PageTemplate  @default(DEFAULT)
+  sortOrder    Int           @default(0)
+  showInNav    Boolean       @default(false)
+  coverMediaId String?       @db.Uuid
+  coverMedia   Media?        @relation("PageCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
+  publishedAt  DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
+
+  translations PageTranslation[]
+  blocks       PageBlock[]
+
+  @@index([status, parentId])
+  @@map("pages")
+}
+
+model PageTranslation {
+  id             String  @id @default(uuid()) @db.Uuid
+  pageId         String  @db.Uuid
+  page           Page    @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  locale         Locale
+  title          String
+  slug           String
+  excerpt        String?
+  seoTitle       String?
+  seoDescription String?
+  seoImageId     String? @db.Uuid
+  seoImage       Media?  @relation("PageSeoImage", fields: [seoImageId], references: [id], onDelete: SetNull)
+
+  @@unique([pageId, locale])
+  @@unique([locale, slug])
+  @@map("page_translations")
+}
+
+model PageBlock {
+  id        String    @id @default(uuid()) @db.Uuid
+  pageId    String    @db.Uuid
+  page      Page      @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  type      BlockType
+  sortOrder Int       @default(0)
+  enabled   Boolean   @default(true)
+  settings  Json      @default("{}")
+
+  @@index([pageId, sortOrder])
+  @@map("page_blocks")
+}
+
+// ---------------------------------------------------------------------------
+// Projects
+// ---------------------------------------------------------------------------
+
+model Project {
+  id            String        @id @default(uuid()) @db.Uuid
+  status        ContentStatus @default(DRAFT)
+  featured      Boolean       @default(false)
+  coverMediaId  String?       @db.Uuid
+  coverMedia    Media?        @relation("ProjectCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
+  galleryLayout GalleryLayout @default(GRID)
+  clientId      String?       @db.Uuid
+  client        Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  projectType   String?
+  location      String?
+  projectDate   DateTime?     @db.Date
+  sortOrder     Int           @default(0)
+  publishedAt   DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
+
+  translations ProjectTranslation[]
+  categories   ProjectCategory[]
+  media        ProjectMedia[]
+  relatedFrom  ProjectRelation[]    @relation("ProjectRelationFrom")
+  relatedTo    ProjectRelation[]    @relation("ProjectRelationTo")
+  clientLinks  ClientProject[]
+
+  @@index([status, featured, sortOrder])
+  @@map("projects")
+}
+
+model ProjectTranslation {
+  id             String  @id @default(uuid()) @db.Uuid
+  projectId      String  @db.Uuid
+  project        Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  locale         Locale
+  title          String
+  slug           String
+  summary        String?
+  description    String?
+  seoTitle       String?
+  seoDescription String?
+  seoImageId     String? @db.Uuid
+  seoImage       Media?  @relation("ProjectSeoImage", fields: [seoImageId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, locale])
+  @@unique([locale, slug])
+  @@map("project_translations")
+}
+
+model ProjectCategory {
+  projectId  String   @db.Uuid
+  categoryId String   @db.Uuid
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, categoryId])
+  @@index([categoryId])
+  @@map("project_categories")
+}
+
+model ProjectMedia {
+  id        String  @id @default(uuid()) @db.Uuid
+  projectId String  @db.Uuid
+  mediaId   String  @db.Uuid
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  media     Media   @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  sortOrder Int     @default(0)
+
+  @@unique([projectId, mediaId])
+  @@index([projectId, sortOrder])
+  @@map("project_media")
+}
+
+model ProjectRelation {
+  projectId        String  @db.Uuid
+  relatedProjectId String  @db.Uuid
+  project          Project @relation("ProjectRelationFrom", fields: [projectId], references: [id], onDelete: Cascade)
+  relatedProject   Project @relation("ProjectRelationTo", fields: [relatedProjectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, relatedProjectId])
+  @@map("project_relations")
+}
+
+// ---------------------------------------------------------------------------
+// Blog
+// ---------------------------------------------------------------------------
+
+model ArticleCategory {
+  id        String    @id @default(uuid()) @db.Uuid
+  nameFr    String
+  nameEn    String
+  slugFr    String    @unique
+  slugEn    String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  articles  Article[]
+
+  @@map("article_categories")
+}
+
+model ArticleTag {
+  id       String               @id @default(uuid()) @db.Uuid
+  nameFr   String
+  nameEn   String
+  slug     String               @unique
+  articles ArticleTagRelation[]
+
+  @@map("article_tags")
+}
+
+model Article {
+  id           String           @id @default(uuid()) @db.Uuid
+  status       ContentStatus    @default(DRAFT)
+  featured     Boolean          @default(false)
+  coverMediaId String?          @db.Uuid
+  coverMedia   Media?           @relation("ArticleCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
+  categoryId   String?          @db.Uuid
+  category     ArticleCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  authorId     String?          @db.Uuid
+  author       User?            @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  publishedAt  DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  deletedAt    DateTime?
+
+  translations ArticleTranslation[]
+  tags         ArticleTagRelation[]
+
+  @@index([status, featured, publishedAt])
+  @@index([categoryId])
+  @@map("articles")
+}
+
+model ArticleTranslation {
+  id             String  @id @default(uuid()) @db.Uuid
+  articleId      String  @db.Uuid
+  article        Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  locale         Locale
+  title          String
+  slug           String
+  excerpt        String?
+  content        String  @default("")
+  seoTitle       String?
+  seoDescription String?
+  seoImageId     String? @db.Uuid
+  seoImage       Media?  @relation("ArticleSeoImage", fields: [seoImageId], references: [id], onDelete: SetNull)
+
+  @@unique([articleId, locale])
+  @@unique([locale, slug])
+  @@map("article_translations")
+}
+
+model ArticleTagRelation {
+  articleId String     @db.Uuid
+  tagId     String     @db.Uuid
+  article   Article    @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tag       ArticleTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, tagId])
+  @@map("article_tag_relations")
+}
+
+// ---------------------------------------------------------------------------
+// Clients & partners
+// ---------------------------------------------------------------------------
+
+model Client {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String
+  logoMediaId String?   @db.Uuid
+  logoMedia   Media?    @relation("ClientLogo", fields: [logoMediaId], references: [id], onDelete: SetNull)
+  websiteUrl  String?
+  description String?
+  sortOrder   Int       @default(0)
+  featured    Boolean   @default(false)
+  active      Boolean   @default(true)
+  monochrome  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  translations ClientTranslation[]
+  projects     Project[]
+  projectLinks ClientProject[]
+
+  @@index([active, sortOrder, featured])
+  @@map("clients")
+}
+
+model ClientTranslation {
+  id          String  @id @default(uuid()) @db.Uuid
+  clientId    String  @db.Uuid
+  client      Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  locale      Locale
+  displayName String?
+  description String?
+
+  @@unique([clientId, locale])
+  @@map("client_translations")
+}
+
+model ClientProject {
+  clientId  String  @db.Uuid
+  projectId String  @db.Uuid
+  client    Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, projectId])
+  @@map("client_projects")
+}
+
+// ---------------------------------------------------------------------------
+// Navigation
+// ---------------------------------------------------------------------------
+
+model Menu {
+  id        String     @id @default(uuid()) @db.Uuid
+  key       String     @unique
+  name      String
+  items     MenuItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@map("menus")
+}
+
+model MenuItem {
+  id           String     @id @default(uuid()) @db.Uuid
+  menuId       String     @db.Uuid
+  menu         Menu       @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  parentId     String?    @db.Uuid
+  parent       MenuItem?  @relation("MenuItemTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children     MenuItem[] @relation("MenuItemTree")
+  target       MenuTarget @default(CUSTOM)
+  pageId       String?    @db.Uuid
+  categoryId   String?    @db.Uuid
+  url          String?
+  labelFr      String
+  labelEn      String
+  sortOrder    Int        @default(0)
+  enabled      Boolean    @default(true)
+  openInNewTab Boolean    @default(false)
+  showChildren Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([menuId, parentId, sortOrder])
+  @@map("menu_items")
+}
+
+// ---------------------------------------------------------------------------
+// Homepage
+// ---------------------------------------------------------------------------
+
+model HomepageSetting {
+  id            Int      @id @default(1)
+  titleFr       String?
+  titleEn       String?
+  descriptionFr String?
+  descriptionEn String?
+  ogImageId     String?  @db.Uuid
+  ogImage       Media?   @relation("HomepageOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
+  updatedAt     DateTime @updatedAt
+
+  @@map("homepage_settings")
+}
+
+model HomepageSection {
+  id        String              @id @default(uuid()) @db.Uuid
+  type      HomepageSectionType
+  enabled   Boolean             @default(true)
+  sortOrder Int                 @default(0)
+  settings  Json                @default("{}")
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@index([sortOrder])
+  @@map("homepage_sections")
+}
+
+// ---------------------------------------------------------------------------
+// Contact
+// ---------------------------------------------------------------------------
+
+model ContactSetting {
+  id        Int      @id @default(1)
+  email     String?
+  addressFr String?
+  addressEn String?
+  hoursFr   String?
+  hoursEn   String?
+  introFr   String?
+  introEn   String?
+  updatedAt DateTime @updatedAt
+
+  @@map("contact_settings")
+}
+
+model ContactPhone {
+  id              String   @id @default(uuid()) @db.Uuid
+  label           String
+  number          String
+  displayOrder    Int      @default(0)
+  isPrimary       Boolean  @default(false)
+  whatsappEnabled Boolean  @default(false)
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([active, displayOrder])
+  @@map("contact_phones")
+}
+
+model ContactMessage {
+  id            String        @id @default(uuid()) @db.Uuid
+  name          String
+  email         String
+  phone         String?
+  serviceType   String?
+  preferredDate DateTime?     @db.Date
+  message       String
+  status        MessageStatus @default(NEW)
+  internalNotes String?
+  customerId    String?       @db.Uuid
+  customer      Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  locale        Locale        @default(FR)
+  sourcePage    String?
+  consentAt     DateTime
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([status, createdAt])
+  @@index([email])
+  @@map("contact_messages")
+}
+
+// ---------------------------------------------------------------------------
+// Booking
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  email     String    @unique
+  phone     String?
+  whatsapp  String?
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  bookings Booking[]
+  messages ContactMessage[]
+
+  @@index([createdAt])
+  @@map("customers")
+}
+
+model BookingService {
+  id              String    @id @default(uuid()) @db.Uuid
+  slug            String    @unique
+  nameFr          String
+  nameEn          String
+  descriptionFr   String?
+  descriptionEn   String?
+  durationMinutes Int       @default(60)
+  priceFrom       Decimal?  @db.Decimal(10, 2)
+  active          Boolean   @default(true)
+  sortOrder       Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  bookings        Booking[]
+
+  @@index([active, sortOrder])
+  @@map("booking_services")
+}
+
+model Booking {
+  id            String          @id @default(uuid()) @db.Uuid
+  reference     String          @unique
+  status        BookingStatus   @default(PENDING)
+  serviceId     String?         @db.Uuid
+  service       BookingService? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  customerId    String?         @db.Uuid
+  customer      Customer?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  fullName      String
+  email         String
+  phone         String
+  whatsapp      String?
+  projectType   String?
+  preferredDate DateTime        @db.Date
+  preferredTime String
+  location      String?
+  description   String
+  budget        String?
+  notes         String?
+  internalNotes String?
+  agreedPrice   Decimal?        @db.Decimal(10, 2)
+  locale        Locale          @default(FR)
+  consentAt     DateTime
+  confirmedAt   DateTime?
+  cancelledAt   DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  history       BookingStatusHistory[]
+  notifications BookingNotification[]
+
+  @@index([status, preferredDate, preferredTime])
+  @@index([email])
+  @@index([createdAt])
+  @@map("bookings")
+}
+
+model BookingStatusHistory {
+  id          String         @id @default(uuid()) @db.Uuid
+  bookingId   String         @db.Uuid
+  booking     Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  fromStatus  BookingStatus?
+  toStatus    BookingStatus
+  note        String?
+  changedById String?        @db.Uuid
+  changedBy   User?          @relation(fields: [changedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime       @default(now())
+
+  @@index([bookingId, createdAt])
+  @@map("booking_status_history")
+}
+
+model BookingAvailability {
+  id            Int      @id @default(1)
+  timezone      String   @default("Africa/Casablanca")
+  workingDays   Json     @default("[1,2,3,4,5,6]")
+  startTime     String   @default("09:00")
+  endTime       String   @default("18:00")
+  slotMinutes   Int      @default(60)
+  bufferMinutes Int      @default(30)
+  maxPerSlot    Int      @default(1)
+  leadTimeHours Int      @default(24)
+  autoConfirm   Boolean  @default(false)
+  updatedAt     DateTime @updatedAt
+
+  @@map("booking_availability")
+}
+
+model BookingBlockedDate {
+  id        String   @id @default(uuid()) @db.Uuid
+  date      DateTime @unique @db.Date
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@map("booking_blocked_dates")
+}
+
+model BookingNotification {
+  id               String              @id @default(uuid()) @db.Uuid
+  bookingId        String?             @db.Uuid
+  booking          Booking?            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  contactMessageId String?             @db.Uuid
+  channel          NotificationChannel
+  template         String
+  recipient        String?
+  status           NotificationStatus  @default(PENDING)
+  providerRef      String?
+  error            String?
+  sentAt           DateTime?
+  createdAt        DateTime            @default(now())
+
+  @@index([status, createdAt])
+  @@map("booking_notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Social & maps
+// ---------------------------------------------------------------------------
+
+model SocialLink {
+  id         String   @id @default(uuid()) @db.Uuid
+  platform   String
+  label      String?
+  url        String
+  username   String?
+  icon       String?
+  sortOrder  Int      @default(0)
+  active     Boolean  @default(true)
+  showHeader Boolean  @default(false)
+  showFooter Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([active, sortOrder])
+  @@map("social_links")
+}
+
+model MapSetting {
+  id            Int      @id @default(1)
+  enabled       Boolean  @default(true)
+  publicUrl     String?
+  embedUrl      String?
+  directionsUrl String?
+  addressFr     String?
+  addressEn     String?
+  latitude      Float?
+  longitude     Float?
+  zoom          Int      @default(14)
+  updatedAt     DateTime @updatedAt
+
+  @@map("map_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Testimonials
+// ---------------------------------------------------------------------------
+
+model Testimonial {
+  id        String   @id @default(uuid()) @db.Uuid
+  author    String
+  role      String?
+  quoteFr   String
+  quoteEn   String
+  photoId   String?  @db.Uuid
+  photo     Media?   @relation("TestimonialPhoto", fields: [photoId], references: [id], onDelete: SetNull)
+  featured  Boolean  @default(false)
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, sortOrder])
+  @@map("testimonials")
+}
+
+// ---------------------------------------------------------------------------
+// System settings
+// ---------------------------------------------------------------------------
+
+model SiteSetting {
+  id                    Int              @id @default(1)
+  companyName           String           @default("TWOK STUDIO")
+  legalName             String           @default("TWOK STUDIO SARL")
+  taglineFr             String?
+  taglineEn             String?
+  descriptionFr         String?
+  descriptionEn         String?
+  logoMediaId           String?          @db.Uuid
+  logoMedia             Media?           @relation("SiteLogo", fields: [logoMediaId], references: [id], onDelete: SetNull)
+  logoLightMediaId      String?          @db.Uuid
+  logoLightMedia        Media?           @relation("SiteLogoLight", fields: [logoLightMediaId], references: [id], onDelete: SetNull)
+  faviconMediaId        String?          @db.Uuid
+  faviconMedia          Media?           @relation("SiteFavicon", fields: [faviconMediaId], references: [id], onDelete: SetNull)
+  timezone              String           @default("Africa/Casablanca")
+  currency              String           @default("MAD")
+  bookingAutoConfirm    Boolean          @default(false)
+  customerRetentionDays Int              @default(730)
+  whatsappEnabled       Boolean          @default(false)
+  whatsappNumber        String?
+  whatsappMessageFr     String?
+  whatsappMessageEn     String?
+  whatsappPhotoFr       String?
+  whatsappPhotoEn       String?
+  whatsappVideoFr       String?
+  whatsappVideoEn       String?
+  whatsappDroneFr       String?
+  whatsappDroneEn       String?
+  whatsappPosition      WhatsAppPosition @default(RIGHT)
+  whatsappPages         Json             @default("[\"all\"]")
+  footerIntroFr         String?
+  footerIntroEn         String?
+  copyrightFr           String?
+  copyrightEn           String?
+  maintenanceMode       Boolean          @default(false)
+  updatedAt             DateTime         @updatedAt
+
+  @@map("site_settings")
+}
+
+model SeoSetting {
+  id                Int      @id @default(1)
+  siteTitleFr       String?
+  siteTitleEn       String?
+  titleTemplate     String?
+  descriptionFr     String?
+  descriptionEn     String?
+  keywordsFr        String?
+  keywordsEn        String?
+  defaultOgMediaId  String?  @db.Uuid
+  defaultOgMedia    Media?   @relation("SeoOgImage", fields: [defaultOgMediaId], references: [id], onDelete: SetNull)
+  twitterHandle     String?
+  googleAnalyticsId String?
+  searchConsoleCode String?
+  robotsExtra       String?
+  updatedAt         DateTime @updatedAt
+
+  @@map("seo_settings")
+}
+
+model Language {
+  id         String   @id @default(uuid()) @db.Uuid
+  code       String   @unique
+  name       String
+  nativeName String
+  active     Boolean  @default(true)
+  isDefault  Boolean  @default(false)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@map("languages")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @db.Uuid
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String?
+  summary    String
+  metadata   Json?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Redirect {
+  id         String   @id @default(uuid()) @db.Uuid
+  locale     Locale
+  fromPath   String
+  toPath     String
+  statusCode Int      @default(301)
+  createdAt  DateTime @default(now())
+
+  @@unique([locale, fromPath])
+  @@map("redirects")
+}
+
+// ---------------------------------------------------------------------------
+// Abuse protection for public forms
+// ---------------------------------------------------------------------------
+
+model RateLimit {
+  key       String   @id
+  count     Int      @default(0)
+  expiresAt DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
+  @@map("rate_limits")
+}
